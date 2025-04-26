@@ -9,7 +9,10 @@ import {
   faSignOutAlt,
   faBriefcase,
   faUser,
-  faCalendarAlt
+  faCalendarAlt,
+  faEdit,
+  faTimes,
+  faBell
 } from '@fortawesome/free-solid-svg-icons';
 import "./TodoList.css";
 
@@ -20,10 +23,33 @@ function TodoList() {
   const [label, setLabel] = useState("personal");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
+  const [editingTaskId, setEditingTaskId] = useState(null);
+  const [editText, setEditText] = useState("");
+  const [editDueDate, setEditDueDate] = useState("");
+  const [editLabel, setEditLabel] = useState("personal");
+  const [editStatus, setEditStatus] = useState("pending");
+  const [reminders, setReminders] = useState([]);
+  const [notificationPermission, setNotificationPermission] = useState('default');
+  const [showReminders, setShowReminders] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
     fetchTasks();
+    
+    // Request notification permission when component mounts
+    if ('Notification' in window) {
+      Notification.requestPermission().then(permission => {
+        setNotificationPermission(permission);
+      });
+    }
+    
+    // Check for upcoming tasks every minute
+    const checkInterval = setInterval(checkUpcomingTasks, 60000);
+    
+    // Initial check
+    checkUpcomingTasks();
+    
+    return () => clearInterval(checkInterval);
   }, []);
 
   const fetchTasks = async () => {
@@ -43,6 +69,44 @@ function TodoList() {
       }
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const checkUpcomingTasks = async () => {
+    try {
+      const res = await axios.get("http://localhost:5001/api/upcoming-tasks", {
+        withCredentials: true
+      });
+      
+      const upcomingTasks = res.data;
+      setReminders(upcomingTasks);
+      
+      // Show notifications if permission is granted
+      if (notificationPermission === 'granted') {
+        upcomingTasks.forEach(task => {
+          if (task.minutes_left <= 60) {
+            let message;
+            if (task.minutes_left <= 0) {
+              message = `"${task.task}" is overdue!`;
+            } else if (task.minutes_left <= 15) {
+              message = `"${task.task}" is due in ${task.minutes_left} minutes!`;
+            } else if (task.minutes_left <= 30) {
+              message = `"${task.task}" is due in 30 minutes!`;
+            } else if (task.minutes_left <= 45) {
+              message = `"${task.task}" is due in 45 minutes!`;
+            } else {
+              message = `"${task.task}" is due in 1 hour!`;
+            }
+            
+            new Notification("Task Reminder", {
+              body: message,
+              icon: "/favicon.ico"
+            });
+          }
+        });
+      }
+    } catch (err) {
+      console.error("Error checking upcoming tasks:", err);
     }
   };
 
@@ -67,8 +131,46 @@ function TodoList() {
       setTodo("");
       setDueDate("");
       await fetchTasks();
+      await checkUpcomingTasks();
     } catch (err) {
       setError("Error adding task: " + (err.response?.data?.error || err.message));
+    }
+  };
+
+  const startEditing = (task) => {
+    setEditingTaskId(task.id);
+    setEditText(task.what_to_do);
+    setEditDueDate(task.due_date.slice(0, 16));
+    setEditLabel(task.label || "personal");
+    setEditStatus(task.status || "pending");
+  };
+
+  const cancelEditing = () => {
+    setEditingTaskId(null);
+    setEditText("");
+    setEditDueDate("");
+    setEditLabel("personal");
+    setEditStatus("pending");
+  };
+
+  const saveEditedTask = async () => {
+    try {
+      await axios.put(
+        "http://localhost:5001/api/update",
+        {
+          id: editingTaskId,
+          what_to_do: editText,
+          due_date: editDueDate,
+          label: editLabel,
+          status: editStatus
+        },
+        { withCredentials: true }
+      );
+      await fetchTasks();
+      await checkUpcomingTasks();
+      cancelEditing();
+    } catch (err) {
+      setError("Error updating task: " + (err.response?.data?.error || err.message));
     }
   };
 
@@ -81,6 +183,7 @@ function TodoList() {
         withCredentials: true,
       });
       await fetchTasks();
+      await checkUpcomingTasks();
     } catch (err) {
       setError("Error deleting task: " + (err.response?.data?.error || err.message));
     }
@@ -96,6 +199,7 @@ function TodoList() {
         { withCredentials: true }
       );
       await fetchTasks();
+      await checkUpcomingTasks();
     } catch (err) {
       setError("Error marking task: " + (err.response?.data?.error || err.message));
     }
@@ -128,29 +232,64 @@ function TodoList() {
     };
   };
 
+  const getTaskColor = (index) => {
+    const pastelColors = [
+      "#F8D5F0", // Pastel pink
+      "#D4F1F9", // Pastel blue
+      "#E2F9D4", // Pastel green
+      "#F9EBD4", // Pastel orange
+      "#E8D5F8", // Pastel purple
+      "#D4F9F1", // Pastel teal
+      "#F9D4D4", // Pastel red
+      "#F0F8D5"  // Pastel yellow
+    ];
+    return pastelColors[index % pastelColors.length];
+  };
+
   return (
     <div className="todo-container">
       <div className="todo-card">
-        {/* Header */}
         <div className="todo-header">
-          <h1 className="todo-title">My Todo List</h1>
-          <button 
-            onClick={handleLogout}
-            className="btn btn-logout"
-          >
-            <FontAwesomeIcon icon={faSignOutAlt} />
-            Logout
-          </button>
+          <h1 className="todo-title">My TODO List</h1>
+          <div className="header-actions">
+            <button 
+              onClick={() => setShowReminders(!showReminders)}
+              className="btn btn-notification"
+            >
+              <FontAwesomeIcon icon={faBell} />
+              {reminders.length > 0 && (
+                <span className="notification-badge">{reminders.length}</span>
+              )}
+            </button>
+            <button 
+              onClick={handleLogout}
+              className="btn btn-logout"
+            >
+              <FontAwesomeIcon icon={faSignOutAlt} />
+              Logout
+            </button>
+          </div>
         </div>
 
-        {/* Error Message */}
         {error && (
           <div className="text-error mb-4 text-center">
             <p>{error}</p>
           </div>
         )}
 
-        {/* Add Task Form */}
+        {showReminders && reminders.length > 0 && (
+          <div className="reminders-panel">
+            <h3>Upcoming Tasks</h3>
+            <ul>
+              {reminders.map((reminder, index) => (
+                <li key={index}>
+                  {reminder.task} - Due in {reminder.minutes_left} minutes
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         <form onSubmit={addTask} className="todo-form">
           <div className="flex-col md:flex-row gap-4">
             <div className="form-group">
@@ -179,10 +318,6 @@ function TodoList() {
                   className="form-input"
                   value={dueDate}
                   onChange={(e) => setDueDate(e.target.value)}
-                />
-                <FontAwesomeIcon 
-                  icon={faCalendarAlt} 
-                  className="absolute right-3 top-3 text-gray-400"
                 />
               </div>
             </div>
@@ -214,7 +349,6 @@ function TodoList() {
           </div>
         </form>
 
-        {/* Task List */}
         <div className="task-list">
           <h2 className="text-lg font-semibold text-gray-800 mb-4">Your Tasks</h2>
           
@@ -227,48 +361,108 @@ function TodoList() {
               No tasks found. Add your first task above!
             </div>
           ) : (
-            <ul className="space-y-3">
-              {tasks.map((task) => {
-                const labelInfo = getLabelInfo(task.label);
-                return (
-                  <li 
-                    key={task.id}
-                    className={`task-item ${task.status === "done" ? "task-completed" : ""}`}
-                  >
-                    <div className="flex justify-between items-start">
-                      <div className="flex-grow">
-                        <div className="flex-row items-center mb-2">
-                          <span className={`task-label ${labelInfo.className}`}>
-                            <FontAwesomeIcon icon={labelInfo.icon} />
-                            {labelInfo.text}
-                          </span>
-                          <span className="task-due">
-                            Due: {formatDueDate(task.due_date)}
-                          </span>
-                        </div>
-                        <p className="task-content">
-                          {task.what_to_do}
-                        </p>
-                      </div>
-                      
-                      <div className="task-actions">
-                        {task.status !== "done" && (
-                          <button
-                            onClick={() => markAsDone(task.id)}
-                            className="action-btn complete-btn"
-                            title="Mark as done"
+            <ul className="space-y-3 list-none">
+              {tasks.map((task, index) => {
+                if (editingTaskId === task.id) {
+                  return (
+                    <li key={task.id} className="task-item editing">
+                      <div className="flex flex-col gap-3">
+                        <input
+                          type="text"
+                          className="form-input"
+                          value={editText}
+                          onChange={(e) => setEditText(e.target.value)}
+                          required
+                        />
+                        <div className="flex gap-3">
+                          <input
+                            type="datetime-local"
+                            className="form-input flex-1"
+                            value={editDueDate}
+                            onChange={(e) => setEditDueDate(e.target.value)}
+                          />
+                          <select
+                            className="form-input"
+                            value={editLabel}
+                            onChange={(e) => setEditLabel(e.target.value)}
                           >
-                            <FontAwesomeIcon icon={faCheck} />
-                          </button>
-                        )}
+                            <option value="personal">Personal</option>
+                            <option value="work">Work</option>
+                          </select>
+                          <select
+                            className="form-input"
+                            value={editStatus}
+                            onChange={(e) => setEditStatus(e.target.value)}
+                          >
+                            <option value="pending">Pending</option>
+                            <option value="done">Done</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div className="flex justify-end mt-2">
                         <button
-                          onClick={() => deleteTask(task.id)}
-                          className="action-btn delete-btn"
-                          title="Delete task"
+                          onClick={saveEditedTask}
+                          className="btn btn-save"
                         >
-                          <FontAwesomeIcon icon={faTrash} />
+                          Save
+                        </button>
+                        <button
+                          onClick={cancelEditing}
+                          className="btn btn-cancel"
+                        >
+                          <FontAwesomeIcon icon={faTimes} />
                         </button>
                       </div>
+                    </li>
+                  );
+                }
+
+                const { text, icon, className } = getLabelInfo(task.label);
+
+                return (
+                  <li 
+                    key={task.id} 
+                    className={`task-item ${className}`}
+                    style={{ backgroundColor: getTaskColor(index) }}
+                  >
+                    <div className="task-content">
+                      <div className="task-header">
+                        <div className="task-label">
+                          <FontAwesomeIcon icon={icon} />
+                          <span className="label-text">{text}</span>
+                        </div>
+                        <div className="task-status">
+                          <span className={`status ${task.status}`}>
+                            {task.status === "done" ? (
+                              <FontAwesomeIcon icon={faCheck} />
+                            ) : (
+                              "Pending"
+                            )}
+                          </span>
+                        </div>
+                      </div>
+                      <p className="task-text">{task.what_to_do}</p>
+                      <p className="task-due-date">{formatDueDate(task.due_date)}</p>
+                    </div>
+                    <div className="task-actions">
+                      <button
+                        onClick={() => markAsDone(task.id)}
+                        className="btn btn-done"
+                      >
+                        Mark as Done
+                      </button>
+                      <button
+                        onClick={() => startEditing(task)}
+                        className="btn btn-edit"
+                      >
+                        <FontAwesomeIcon icon={faEdit} />
+                      </button>
+                      <button
+                        onClick={() => deleteTask(task.id)}
+                        className="btn btn-delete"
+                      >
+                        <FontAwesomeIcon icon={faTrash} />
+                      </button>
                     </div>
                   </li>
                 );

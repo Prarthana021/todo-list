@@ -6,15 +6,20 @@ from datetime import datetime
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
 
+@app.before_request
+def handle_options_requests():
+    if request.method == 'OPTIONS':
+        return '', 200
+
 # Configure CORS
 CORS(
     app,
+    supports_credentials=True,
     resources={
         r"/api/*": {
             "origins": "http://localhost:3000",
             "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
             "allow_headers": ["Content-Type"],
-            "supports_credentials": True,
             "expose_headers": ["Set-Cookie"]
         }
     }
@@ -100,11 +105,44 @@ def get_items():
             "what_to_do": r["what_to_do"],
             "due_date": r["due_date"],
             "status": r["status"],
-            "label": r["label"] if r["label"] else "personal"  # Default value
+            "label": r["label"] if r["label"] else "personal"
         }
         items.append(task)
     
     return jsonify(items)
+
+@app.route("/api/upcoming-tasks", methods=["GET"])
+def get_upcoming_tasks():
+    if "user_id" not in session:
+        return jsonify(error="Unauthorized"), 401
+    
+    uid = session["user_id"]
+    now = datetime.now()
+    
+    # Get tasks due in the next 2 hours (for initial check)
+    upcoming = get_db().execute(
+        """SELECT id, what_to_do, due_date 
+           FROM entries 
+           WHERE user_id=? 
+           AND status='pending' 
+           AND due_date BETWEEN ? AND datetime(?, '+2 hours')""",
+        (uid, now.strftime("%Y-%m-%d %H:%M:%S"), now.strftime("%Y-%m-%d %H:%M:%S"))
+    ).fetchall()
+    
+    tasks = []
+    for task in upcoming:
+        due_time = datetime.strptime(task["due_date"], "%Y-%m-%d %H:%M:%S")
+        time_left = due_time - now
+        minutes_left = int(time_left.total_seconds() / 60)
+        
+        tasks.append({
+            "id": task["id"],
+            "task": task["what_to_do"],
+            "due_date": task["due_date"],
+            "minutes_left": minutes_left
+        })
+    
+    return jsonify(tasks)
 
 @app.route("/api/add", methods=["POST"])
 def add_item():
@@ -114,13 +152,12 @@ def add_item():
     data = request.get_json()
     todo = data.get("todo")
     due = data.get("due_date")
-    label = data.get("label", "personal")  # Default to "personal" if not provided
+    label = data.get("label", "personal")
     uid = session["user_id"]
 
     if not todo:
         return jsonify(error="Task description is required"), 400
 
-    # Set default due date if not provided
     if not due:
         due = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -132,6 +169,56 @@ def add_item():
         )
         db.commit()
         return jsonify(message="Task added"), 201
+    except Exception as e:
+        return jsonify(error=str(e)), 500
+
+@app.route("/api/update", methods=["PUT"])
+def update_task():
+    if "user_id" not in session:
+        return jsonify(error="Unauthorized"), 401
+
+    data = request.get_json()
+    task_id = data.get("id")
+    new_text = data.get("what_to_do")
+    new_due_date = data.get("due_date")
+    new_label = data.get("label")
+    new_status = data.get("status")
+    uid = session["user_id"]
+
+    if not task_id:
+        return jsonify(error="Task ID is required"), 400
+
+    db = get_db()
+    try:
+        existing = db.execute(
+            "SELECT * FROM entries WHERE id=? AND user_id=?",
+            (task_id, uid)
+        ).fetchone()
+        
+        if not existing:
+            return jsonify(error="Task not found"), 404
+
+        update_data = {
+            "what_to_do": new_text if new_text is not None else existing["what_to_do"],
+            "due_date": new_due_date if new_due_date is not None else existing["due_date"],
+            "label": new_label if new_label is not None else existing["label"],
+            "status": new_status if new_status is not None else existing["status"]
+        }
+
+        db.execute(
+            """UPDATE entries 
+               SET what_to_do=?, due_date=?, label=?, status=?
+               WHERE id=? AND user_id=?""",
+            (update_data["what_to_do"], 
+             update_data["due_date"], 
+             update_data["label"],
+             update_data["status"],
+             task_id, 
+             uid)
+        )
+        db.commit()
+        
+        return jsonify(message="Task updated successfully"), 200
     except Exception as e:
         return jsonify(error=str(e)), 500
 
@@ -190,7 +277,6 @@ def mark_done():
         return jsonify(error=str(e)), 500
 
 if __name__ == "__main__":
-    # Create tables if they don't exist
     with app.app_context():
         db = get_db()
         db.execute("""
