@@ -13,7 +13,7 @@ function Register({ setUserId }) {
     e.preventDefault();
     try {
       const res = await axios.post(
-        "http://localhost:5001/api/register", 
+        "http://backend:5001/api/register", 
         { username, password },
         {
           headers: {
@@ -25,7 +25,7 @@ function Register({ setUserId }) {
         setSuccess(true);
         // Auto-login after registration
         const loginRes = await axios.post(
-          "http://localhost:5001/api/login",
+          "http://backend:5001/api/login",
           { username, password },
           { withCredentials: true }
         );

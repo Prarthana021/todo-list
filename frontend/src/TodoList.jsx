@@ -56,7 +56,7 @@ function TodoList() {
     setIsLoading(true);
     setError("");
     try {
-      const res = await axios.get("http://localhost:5001/api/items", {
+      const res = await axios.get("http://backend:5001/api/items", {
         withCredentials: true,
         headers: { "Content-Type": "application/json" },
       });
@@ -74,7 +74,7 @@ function TodoList() {
 
   const checkUpcomingTasks = async () => {
     try {
-      const res = await axios.get("http://localhost:5001/api/upcoming-tasks", {
+      const res = await axios.get("http://backend:5001/api/upcoming-tasks", {
         withCredentials: true
       });
       
@@ -120,7 +120,7 @@ function TodoList() {
     setError("");
     try {
       await axios.post(
-        "http://localhost:5001/api/add",
+        "http://backend:5001/api/add",
         { 
           todo: todo.trim(), 
           due_date: dueDate || new Date().toISOString().slice(0, 16),
@@ -156,7 +156,7 @@ function TodoList() {
   const saveEditedTask = async () => {
     try {
       await axios.put(
-        "http://localhost:5001/api/update",
+        "http://backend:5001/api/update",
         {
           id: editingTaskId,
           what_to_do: editText,
@@ -178,7 +178,7 @@ function TodoList() {
     if (!id) return;
     
     try {
-      await axios.delete("http://localhost:5001/api/delete", {
+      await axios.delete("http://backend:5001/api/delete", {
         data: { id },
         withCredentials: true,
       });
@@ -194,7 +194,7 @@ function TodoList() {
     
     try {
       await axios.put(
-        "http://localhost:5001/api/mark",
+        "http://backend:5001/api/mark",
         { id },
         { withCredentials: true }
       );
@@ -207,7 +207,7 @@ function TodoList() {
 
   const handleLogout = async () => {
     try {
-      await axios.post("http://localhost:5001/api/logout", {}, { withCredentials: true });
+      await axios.post("http://backend:5001/api/logout", {}, { withCredentials: true });
       navigate("/login");
     } catch (err) {
       setError("Logout error: " + (err.message || "Unknown error"));

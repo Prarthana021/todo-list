@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+
+    spec:
+      containers:
+        - name: backend
+          image: prarthanaaa1234/todolist-backend:v8
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 5001  # change this if your backend runs on a different port

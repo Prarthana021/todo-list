@@ -12,7 +12,7 @@ function Login({ setUserId }) {
     e.preventDefault();
     try {
       const res = await axios.post(
-        "http://localhost:5001/api/login",
+        "http://backend:5001/api/login",
         { username, password },
         { 
           withCredentials: true,
